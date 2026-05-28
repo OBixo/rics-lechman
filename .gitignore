@@ -1,0 +1,13 @@
+# Arquivo de login local (NAO versionar)
+login.local.json
+
+# Saidas e arquivos baixados
+output/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Ambiente virtual (opcional)
+.venv/
+venv/
