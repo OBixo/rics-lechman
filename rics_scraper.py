@@ -20,6 +20,8 @@ LINKS_TXT = Path("rics_links.txt")
 DEBUG_DIR = OUTPUT_DIR / "_debug_pages"
 DOWNLOAD_DELAY_SECONDS = 0.1
 LOGIN_FILE = Path("login.local.json")
+INPUT_LIST_FILE = Path("input") / "lista.txt"
+LIST_OUTPUT_DIR = OUTPUT_DIR / "lista"
 
 
 def load_credentials(login_file: Path) -> Tuple[str, str]:
@@ -191,6 +193,22 @@ def build_site_index(links: List[str]) -> Dict[str, str]:
     return index
 
 
+def read_units_list(list_file: Path) -> List[str]:
+    if not list_file.exists():
+        raise RuntimeError(f"Arquivo de lista nao encontrado: {list_file}")
+
+    units: List[str] = []
+    seen: Set[str] = set()
+    for raw_line in list_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip().upper()
+        if not line or line.startswith("#"):
+            continue
+        if line not in seen:
+            seen.add(line)
+            units.append(line)
+    return units
+
+
 def pesquisar_rics(client: RicsClient, limit: Optional[int] = None) -> int:
     print("\n[Pesquisar Rics] Coletando página de login...")
     login_html = client.get_text(LOGIN_PAGE_URL)
@@ -271,9 +289,59 @@ def baixar_rics(client: RicsClient, limit: Optional[int] = None) -> int:
     return 0
 
 
+def baixar_lista_unidades(
+    client: RicsClient,
+    list_file: Path = INPUT_LIST_FILE,
+    destination_dir: Path = LIST_OUTPUT_DIR,
+) -> int:
+    print(f"\n[Baixar Lista] Lendo unidades de: {list_file.resolve()}")
+    requested_units = read_units_list(list_file)
+    if not requested_units:
+        print("Arquivo de lista vazio. Inclua ao menos uma unidade por linha.")
+        return 0
+
+    print("[Baixar Lista] Acessando página de RICs...")
+    interchange_html = client.ensure_interchange_page()
+    save_debug_page("interchange_page.html", interchange_html)
+
+    links = extract_links(interchange_html)
+    site_index = build_site_index(links)
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+
+    available_units = [u for u in requested_units if u in site_index]
+    missing_on_site = [u for u in requested_units if u not in site_index]
+
+    print(f"Unidades na lista: {len(requested_units)}")
+    print(f"Encontradas no site: {len(available_units)}")
+    print(f"Nao encontradas no site: {len(missing_on_site)}")
+
+    for idx, unit in enumerate(available_units, start=1):
+        link = site_index[unit]
+        print(f"[{idx}/{len(available_units)}] Baixando {unit}...")
+        try:
+            content, headers = client.get_binary(link)
+        except (HTTPError, URLError) as exc:
+            print(f"  ERRO ao baixar {unit}: {exc}")
+            continue
+
+        ext = extension_from_headers(headers)
+        out_file = destination_dir / f"{unit}{ext}"
+        out_file.write_bytes(content)
+        time.sleep(DOWNLOAD_DELAY_SECONDS)
+
+    if missing_on_site:
+        print("Unidades nao encontradas no site:")
+        for unit in missing_on_site:
+            print(f"  - {unit}")
+
+    print(f"Download da lista finalizado. Arquivos em: {destination_dir.resolve()}\n")
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Automacao de pesquisa/download de RICs")
-    parser.add_argument("command", choices=["search", "download"], help="Acao a executar")
+    parser.add_argument("command", choices=["search", "download", "download-list"], help="Acao a executar")
     parser.add_argument("--limit", type=int, default=None, help="Limita quantidade de links (teste)")
     return parser.parse_args()
 
@@ -288,6 +356,8 @@ def main() -> int:
             return pesquisar_rics(client, limit=args.limit)
         if args.command == "download":
             return baixar_rics(client, limit=args.limit)
+        if args.command == "download-list":
+            return baixar_lista_unidades(client)
     except Exception as exc:
         print(f"ERRO: {exc}")
         return 1

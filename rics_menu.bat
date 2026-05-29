@@ -14,7 +14,8 @@ echo          MENU RICS
 echo ===============================
 echo 1 - Pesquisar Rics
 echo 2 - Baixar Rics
-echo 3 - Sair
+echo 3 - Baixar lista de unidades (input\lista.txt)
+echo 4 - Sair
 echo.
 set /p opcao=Escolha uma opcao: 
 
@@ -35,6 +36,14 @@ if "%opcao%"=="2" (
 )
 
 if "%opcao%"=="3" (
+    echo.
+    python rics_scraper.py download-list
+    echo.
+    pause
+    goto menu
+)
+
+if "%opcao%"=="4" (
     exit /b 0
 )
 
